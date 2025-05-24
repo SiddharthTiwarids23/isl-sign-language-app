@@ -5,45 +5,54 @@ from PIL import Image
 import gdown
 import os
 
-st.title("🤟 Indian Sign Language Recognition")
-st.write("Upload a hand sign image (A–Z, 0–9) and let the AI predict it.")
-
-# File info
+# --- Download model and class_order if not present ---
 MODEL_PATH = "resnet50_full_model.keras"
-DRIVE_FILE_ID = "1T2cbk4txFnKDJnLsZZzbGClhPjEqkcPG"
+CLASS_ORDER_PATH = "class_order.npy"
 
-# Download model from Google Drive if not already present
+MODEL_ID = "1-3DpM6EckF3pAb-JGS6nUE1pmCEwnFpr"
+CLASS_ORDER_ID = "1-6RDPKAELZo5JlOkIjtf2FJFcnHB8Ktr"
+
 if not os.path.exists(MODEL_PATH):
-    with st.spinner("⏬ Downloading model from Google Drive..."):
-        gdown.download(
-            id=DRIVE_FILE_ID,
-            output=MODEL_PATH,
-            quiet=False
-        )
+    with st.spinner("Downloading model..."):
+        gdown.download(id=MODEL_ID, output=MODEL_PATH, quiet=False)
 
-# Load the model
+if not os.path.exists(CLASS_ORDER_PATH):
+    with st.spinner("Downloading class labels..."):
+        gdown.download(id=CLASS_ORDER_ID, output=CLASS_ORDER_PATH, quiet=False)
+
+# --- Load model and class labels ---
 model = tf.keras.models.load_model(MODEL_PATH)
+classes = np.load(CLASS_ORDER_PATH)
 
-# Class labels
-class_labels = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
-]
+# --- Preprocessing function ---
+def preprocess_image(image: Image.Image):
+    image = image.convert("RGB").resize((224, 224))
+    arr = tf.keras.utils.img_to_array(image)
+    arr = tf.keras.applications.resnet50.preprocess_input(arr)
+    return np.expand_dims(arr, axis=0)
 
-# Image upload
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-if uploaded_file:
-    img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="📷 Uploaded Image", use_column_width=True)
+# --- Streamlit UI ---
+st.set_page_config(page_title="Indian Sign Language Recognition", layout="centered")
+st.title("🤟 Indian Sign Language Recognition")
+st.write("Upload an image of a hand gesture to identify the corresponding ISL class.")
 
-    img = img.resize((224, 224))
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-    prediction = model.predict(img_array)
-    index = np.argmax(prediction)
-    confidence = prediction[0][index] * 100
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    st.markdown(f"### 🧠 Prediction: `{class_labels[index]}`")
-    st.markdown(f"**Confidence:** `{confidence:.2f}%`")
+    # Preprocess and predict
+    input_tensor = preprocess_image(image)
+    prediction = model.predict(input_tensor, verbose=0)
+    confidence = np.max(prediction)
+    predicted_index = np.argmax(prediction)
+    predicted_class = classes[predicted_index]
+
+    # Display result
+    st.markdown("###  Prediction:")
+    st.write(f"**Class:** `{predicted_class}`")
+    st.write(f"**Confidence:** `{confidence:.2%}`")
+
+    if confidence < 0.5:
+        st.warning(" Low confidence. The prediction may not be reliable.")
